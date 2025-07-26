@@ -1,0 +1,580 @@
+from flask import Flask, render_template, jsonify, request, redirect, session
+import pandas as pd
+import numpy as np
+
+
+# Place admin-login route after app initialization
+
+import os
+import subprocess
+import sys
+import socket
+import time
+import markdown
+from users_db import create_user, authenticate_user, get_non_admin_users
+from flask import Flask, render_template, jsonify, request, redirect, session
+import pandas as pd
+import numpy as np
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+app.secret_key = 'your_secret_key_here'  # Needed for session
+
+# Place admin-login route after app initialization
+@app.route('/admin-login', methods=['GET', 'POST'])
+def admin_login():
+    error = None
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = authenticate_user(username, password)
+        if user and user.get('is_admin', False):
+            session['username'] = user['username']
+            session['is_admin'] = True
+            return redirect('/admin')
+        else:
+            error = 'Invalid admin credentials.'
+    return render_template('admin_login.html', error=error)
+
+# --- Global flag to track app restart for context reset ---
+app_restart_flag = {'cleared': False}
+
+@app.before_request
+def clear_context_on_restart():
+    # Only clear once per app restart
+    if not app_restart_flag['cleared']:
+        session.pop('latest_alerts', None)
+        session.pop('latest_data', None)
+        app_restart_flag['cleared'] = True
+
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = authenticate_user(username, password)
+        if user:
+            session['username'] = user['username']
+            session['is_admin'] = user.get('is_admin', False)
+            if session['is_admin']:
+                return redirect('/admin')
+            else:
+                return redirect('/')
+        else:
+            error = 'Invalid username or password.'
+    return render_template('login.html', error=error)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    error = None
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        is_admin = 'is_admin' in request.form
+        success, msg = create_user(username, password, is_admin)
+        if success:
+            session['username'] = username
+            session['is_admin'] = is_admin
+            if is_admin:
+                return redirect('/admin')
+            else:
+                return redirect('/')
+        else:
+            error = msg
+    return render_template('register.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
+
+@app.route('/admin')
+@login_required
+def admin():
+    if not session.get('is_admin'):
+        return redirect('/')
+    from users_db import get_all_users
+    users = get_all_users()
+    return render_template('admin.html', users=users)
+# Diagnostic functions
+TEMP_THRESHOLD = 70.0
+VOLTAGE_MIN = 20.0
+CURRENT_SPIKE_DELTA = 2.0
+K_T = 0.1
+EFFICIENCY_ESTIMATE = 0.9
+
+def detect_overheating_row(row):
+    alerts = []
+    if row['temperature'] > TEMP_THRESHOLD:
+        alerts.append(
+            f"[{row['timestamp']}] Overheating: temperature {row['temperature']}\u00b0C exceeds {TEMP_THRESHOLD}\u00b0C"
+        )
+    return alerts
+
+def detect_voltage_drop_row(row):
+    alerts = []
+    if row['voltage'] < VOLTAGE_MIN:
+        alerts.append(
+            f"[{row['timestamp']}] Voltage drop: V={row['voltage']}V below {VOLTAGE_MIN}V"
+        )
+    return alerts
+
+def detect_current_spike(prev_row, row):
+    alerts = []
+    if prev_row is not None:
+        delta = abs(row['current'] - prev_row['current'])
+        if delta > CURRENT_SPIKE_DELTA:
+            alerts.append(
+                f"[{row['timestamp']}] Current spike: ΔI={delta:.2f}A (I={row['current']:.2f}A)"
+            )
+    return alerts
+
+def estimate_efficiency_row(row):
+    alerts = []
+    torque = row.get('torque', np.nan)
+    if not np.isnan(torque):
+        expected_current = torque / (K_T * EFFICIENCY_ESTIMATE)
+        efficiency = min(expected_current / row['current'], 1.0)
+        if efficiency < 0.9:
+            alerts.append(
+                f"[{row['timestamp']}] Efficiency low: {efficiency*100:.1f}%"
+            )
+    return alerts
+
+def compute_power_stats(df):
+    df['power'] = df['voltage'] * df['current']
+    return df['power'].mean(), df['power'].max()
+
+@app.route('/', methods=['GET', 'POST'])
+@login_required
+def diagnostics():
+    if request.method == 'POST':
+        file = request.files.get('csv_file')
+        if file and file.filename.endswith('.csv'):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join('uploads', filename)
+            os.makedirs('uploads', exist_ok=True)
+            file.save(filepath)
+
+            # Load and preprocess the CSV
+            df = pd.read_csv(filepath, parse_dates=['timestamp'])
+            df['power'] = df['voltage'] * df['current']
+
+            # Generate raw alerts (issues only, no solutions)
+            alerts = []
+            alerts += df.apply(detect_overheating_row, axis=1).explode().dropna().tolist()
+            alerts += df.apply(detect_voltage_drop_row, axis=1).explode().dropna().tolist()
+            alerts += [a for i, row in df.iterrows() for a in detect_current_spike(df.iloc[i-1] if i > 0 else None, row)]
+            alerts += df.apply(estimate_efficiency_row, axis=1).explode().dropna().tolist()
+            avg_p, peak_p = compute_power_stats(df)
+            alerts.append(f"Average power: {avg_p:.1f} W, Peak power: {peak_p:.1f} W")
+
+            # Store alerts and data in session for use in recommender and dashboard
+            session['latest_alerts'] = alerts
+            session['latest_data'] = latest_data = df.iloc[-1].to_dict()
+            session['latest_data']['energy'] = df['energy'].sum() if 'energy' in df else 0
+
+            return render_template('index.html', initial_data=[latest_data], alerts=alerts, summary=[], suggestions=[])
+    # GET: Use session context if available
+    latest_data = session.get('latest_data')
+    alerts = session.get('latest_alerts', [])
+    if latest_data:
+        return render_template('index.html', initial_data=[latest_data], alerts=alerts, summary=[], suggestions=[])
+    else:
+        return render_template('index.html', initial_data=[], alerts=[], summary=[], suggestions=[])
+
+@app.route('/results')
+def results():
+    # Remove/disable this route or redirect to dashboard
+    return redirect('/')
+
+# --- Energy Schemes AI Assistant (RAG) Integration ---
+from langchain_community.vectorstores import Chroma
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
+import zipfile
+import tempfile
+import shutil
+
+# Configuration for RAG
+class SchemesConfig:
+    GROQ_API_KEY = "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"
+    VECTOR_DB_PATH = r'C:\Users\Kiran\OneDrive\Desktop\IDP\Energy_Coaching_System\Energy_Coaching_System Almost Final\Dashboard\Dashboard\Schemes_DB'
+
+app.config.from_object(SchemesConfig)
+
+vectorstore = None
+retriever = None
+qa_chain = None
+llm = None
+embedding = None
+
+def initialize_rag_system():
+    global llm, qa_chain, embedding
+    try:
+        os.environ["GROQ_API_KEY"] = app.config['GROQ_API_KEY']
+        embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        llm = ChatGroq(api_key=app.config['GROQ_API_KEY'], model_name="llama3-8b-8192")
+        prompt_template = PromptTemplate(
+            input_variables=["question", "context"],
+            template=(
+                "You are an AI-powered virtual assistant dedicated to providing support and guidance about "
+                "energy-related government schemes, subsidies, and incentives specifically for Indian MSMEs "
+                "in the industrial sector.\n\n"
+                "You are strictly limited to answering questions ONLY about:\n"
+                "- Government schemes, subsidies, or incentives for industrial MSMEs\n"
+                "- Energy efficiency programs for industrial MSMEs\n"
+                "- Renewable energy initiatives and adoption for industrial MSMEs\n"
+                "- Regulatory frameworks or policies affecting industrial MSME energy use\n"
+                "- Energy-saving recommendations for industrial MSMEs\n\n"
+                "Do NOT answer questions about non-industrial, household, agricultural, or commercial energy topics, "
+                "or about MSMEs outside the industrial/manufacturing sector. If the question is outside this scope, "
+                "simply respond with: 'Sorry, I can only answer questions related to energy schemes, incentives, or recommendations "
+                "for industrial MSMEs in India.'\n\n"
+                "Use accurate and concise responses based only on the provided context.\n"
+                "Language should be clear and professional for plant operators, engineers, and MSME managers.\n\n"
+                "Question: {question}\n\n"
+                "Context: {context}\n\n"
+                "Answer:"
+            )
+        )
+        qa_chain = LLMChain(llm=llm, prompt=prompt_template)
+        return True
+    except Exception as e:
+        print(f"❌ Error initializing RAG system: {e}")
+        return False
+
+def load_schemes_vectorstore():
+    global vectorstore, retriever
+    try:
+        vector_db_path = app.config['VECTOR_DB_PATH']
+        print(f"[DEBUG] Attempting to load vector DB from: {vector_db_path}")
+        if not os.path.exists(vector_db_path):
+            print(f"❌ Vector database directory not found: {vector_db_path}")
+            return False
+        # No extraction needed, load Chroma directly from directory
+        global embedding
+        if embedding is None:
+            print("[DEBUG] Embedding not initialized, initializing now...")
+            embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        try:
+            print(f"[DEBUG] Attempting to load Chroma with embedding function...")
+            vectorstore = Chroma(persist_directory=vector_db_path, embedding_function=embedding)
+            doc_count = vectorstore._collection.count()
+            print(f"VectorDB loaded with {doc_count} docs (embedding)")
+            if doc_count > 0:
+                retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+                return True
+        except Exception as e:
+            print(f"Chroma load with embedding failed: {e}")
+            print(f"[DEBUG] Attempting to load Chroma with default embedding...")
+            vectorstore = Chroma(persist_directory=vector_db_path)
+            doc_count = vectorstore._collection.count()
+            print(f"VectorDB loaded with {doc_count} docs (default)")
+            if doc_count > 0:
+                retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+                return True
+        return False
+    except Exception as e:
+        print(f"VectorDB load outer error: {e}")
+        return False
+
+def create_fallback_knowledge_base():
+    schemes_data = [
+        {
+            "title": "UDAY Scheme (Ujwal DISCOM Assurance Yojana)",
+            "content": """UDAY (Ujwal Discom Assurance Yojana) is a comprehensive scheme for operational and financial turnaround of State Electricity Boards (SEBs).\n\nObjectives:\n- Reduce AT&C (Aggregate Technical & Commercial) losses to 15%\n- Reduce gap between cost of supply and average revenue realized\n- Improve financial health of DISCOMs\n\nKey Incentives under UDAY:\n- <b>5% Incentive:</b> For DISCOMs achieving a capacity addition of up to 12% of their installed base capacity.\n- <b>10% Incentive:</b> For DISCOMs achieving a capacity addition of more than 12% but less than 30% of their installed base capacity.\n- <b>Incentive Cap:</b> The total incentives are limited to the available financial outlay, even if a DISCOM achieves a higher capacity addition.\n- <b>Eligibility:</b> These incentives apply only to the addition of the initial 18,000 MW of Renewable Thermal System (RTS) capacity after the launch of UDAY.\n\nFinancial Benefits:\n- Lower interest costs through state government bonds\n- Extended repayment periods\n- Performance-linked financial support\n- Central government grants for efficiency improvements\n\nOperational Reforms:\n- Mandatory energy audits\n- Smart metering for consumers above 200 units\n- Feeder separation for agriculture\n- LED distribution programs\n\n<b>Objective:</b> These incentives are designed to encourage DISCOMs to expand their capacity and improve efficiency, supporting the overall goal of a financially healthy and operationally efficient power distribution sector in India."""
+        },
+        {
+            "title": "PAT Scheme (Perform, Achieve and Trade)",
+            "content": """PAT (Perform, Achieve and Trade) is a market-based mechanism to enhance energy efficiency in energy-intensive industries.\n\nCoverage:\n- Thermal power plants\n- Iron & steel industry\n- Cement industry\n- Fertilizer industry\n- Aluminum industry\n- Textile industry\n- Paper & pulp industry\n- Chlor-alkali industry\n\nMechanism:\n- Mandatory energy reduction targets for designated consumers\n- Energy efficiency certificates (ESCerts) for excess reductions\n- Trading platform for certificates\n- Financial penalties for non-compliance\n\nBenefits:\n- Reduced energy costs\n- Lower greenhouse gas emissions\n- Revenue generation through certificate trading\n- Technology upgradation incentives\n\nEligibility:\n- Energy-intensive industries with consumption above threshold limits\n- Designated consumers under Energy Conservation Act\n\nImplementation:\n- Three-year cycles with specific reduction targets\n- Baseline energy consumption assessment\n- Annual monitoring and verification\n- Certificate issuance for overachievement"""
+        },
+        {
+            "title": "MSME Energy Efficiency Schemes",
+            "content": """Multiple schemes available for Micro, Small & Medium Enterprises (MSMEs) to improve energy efficiency:\n\n1. Credit Linked Capital Subsidy for Technology Upgradation (CLCSS):\n- 15% capital subsidy for technology upgradation\n- Maximum subsidy: ₹15 lakhs\n- Focus on energy-efficient technologies\n\n2. Energy Efficiency Financing Platform (EEFP):\n- Partial risk guarantee for energy efficiency projects\n- Lower interest rates for MSME borrowers\n- Technical assistance for project development\n\n3. Technology Upgradation Fund Scheme (TUFS):\n- Financial assistance for modern energy-efficient machinery\n- Reduced interest rates\n- Tax benefits\n\nBest Practices for MSMEs:\n- Energy audits and monitoring\n- LED lighting adoption\n- Variable frequency drives for motors\n- Power factor correction\n- Waste heat recovery systems\n- Solar water heating systems\n\nFinancial Support:\n- Subsidies ranging from 10-25% of project cost\n- Concessional loans through SIDBI\n- Technical assistance grants\n- Performance-based incentives"""
+        },
+        {
+            "title": "Energy Conservation Building Code (ECBC)",
+            "content": """ECBC provides minimum energy performance standards for commercial buildings.\n\nCoverage:\n- Commercial buildings with connected load ≥ 100 kW\n- New constructions and major renovations\n- Voluntary compliance with incentives\n\nKey Components:\n- Building envelope requirements\n- HVAC system efficiency standards\n- Lighting power density limits\n- Solar water heating mandates\n\nCompliance Levels:\n- ECBC: Basic compliance level\n- ECBC+: 25% more efficient than ECBC\n- Super ECBC: 50% more efficient than ECBC\n\nBenefits:\n- 25-40% energy savings\n- Reduced operating costs\n- Green building certification eligibility\n- Enhanced property value\n\nIncentives:\n- Fast-track approvals\n- Reduced property taxes in some states\n- Priority in government projects\n- Access to green financing"""
+        }
+    ]
+    return schemes_data
+
+
+# --- Formatting Utility ---
+def clean_and_format_response(response):
+    import re
+    # Remove asterisks
+    response = re.sub(r'\*+', '', response)
+    # Only add a newline before numbered points at the start of a line or after a blank line, not in the middle of a sentence
+    # This will match numbered points that are at the start of a line or after a newline and a space (not after a digit or letter)
+    response = re.sub(r'(^|\n)(\s*)(\d+)\.\s+', r'\1\2\3. ', response)
+    # Remove multiple newlines or spaces
+    response = re.sub(r'\n{3,}', '\n\n', response)
+    response = re.sub(r'[ \t]+\n', '\n', response)
+    response = response.strip()
+    # Wrap in a <div> with justified text for HTML rendering
+    return f'<div style="text-align:justify;white-space:pre-line;">{response}</div>'
+
+def answer_question_with_rag(question):
+
+    if retriever and qa_chain:
+        try:
+            retrieved_docs = retriever.get_relevant_documents(question)
+            print(f"[DEBUG] RAG: Retrieved {len(retrieved_docs) if retrieved_docs else 0} docs from vectorstore for question: '{question}'")
+            if not retrieved_docs:
+                print("[DEBUG] RAG: No docs found, trying similarity_search...")
+                retrieved_docs = vectorstore.similarity_search(question, k=5)
+            if retrieved_docs:
+                context = " ".join([doc.page_content for doc in retrieved_docs])
+                response = qa_chain.run(question=question, context=context)
+                print("[DEBUG] RAG: Answer generated from vectorstore context. Returning used_vector_db=True.")
+                return clean_and_format_response(response), True
+            else:
+                print("[DEBUG] RAG: No relevant docs found, using fallback. Returning used_vector_db=False.")
+        except Exception as e:
+            print(f"RAG error: {e}")
+    print("[DEBUG] RAG: Using fallback knowledge base. Returning used_vector_db=False.")
+    from flask import current_app
+    # fallback_answer_question may not be defined above, so import or reference it here
+    return clean_and_format_response(current_app.view_functions['fallback_answer_question'](question)), False
+
+@app.route('/schemes')
+def schemes_index():
+    return render_template('schemes.html')
+
+@app.route('/ask', methods=['POST'])
+def ask_question():
+    data = request.get_json()
+    if not data or 'question' not in data:
+        return jsonify({'error': 'No question provided'}), 400
+    question = data['question'].strip()
+    if not question:
+        return jsonify({'error': 'Question cannot be empty'}), 400
+    try:
+        answer, used_vector_db = answer_question_with_rag(question)
+        print(f"[DEBUG] /ask: used_vector_db={used_vector_db}")
+        return jsonify({'question': question, 'answer': answer, 'used_vector_db': used_vector_db})
+    except Exception as e:
+        return jsonify({'error': f'Error processing question: {str(e)}'}), 500
+
+# --- RS775 GenAI Integration (Vector DB + LLM) ---
+from langchain_community.vectorstores import Chroma as ChromaCommunity
+from langchain_huggingface import HuggingFaceEmbeddings as HFEmbeddingsCommunity
+from langchain_groq import ChatGroq
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+
+# 🧠 Prompt Template for Generating Motor Issue Recommendations
+rs775_recommend_prompt_template = PromptTemplate(
+    input_variables=["issue", "context"],
+    template=(
+        "You are an AI assistant with expertise in electrical engineering and motor systems. "
+        "Based on the following datasheet context for the RS775-4538 DC motor and the issue described, "
+        "provide a clear, practical recommendation for resolving or mitigating the issue. "
+        "Base your reasoning on the datasheet when possible. If not covered, use standard best practices. "
+        "Do NOT invent technical specs that are not in the datasheet.\n\n"
+        "Datasheet Context:\n{context}\n\n"
+        "Observed Issue:\n{issue}\n\n"
+        "Recommended Action:"
+    )
+)
+
+rs775_vectorstore = None
+rs775_retriever = None
+rs775_qa_chain = None
+rs775_llm = None
+rs775_embedding = None
+rs775_initialized = False
+
+RS775_VECTOR_DB_PATH = r'C:\Users\Kiran\OneDrive\Desktop\IDP\Energy_Coaching_System\Energy_Coaching_System Almost Final\Dashboard\Dashboard\Schemes_DB\RS775_VectorDB'
+RS775_GROQ_API_KEY = app.config.get('GROQ_API_KEY', None)
+
+# Q&A Prompt for RS775
+rs775_prompt_template = PromptTemplate(
+    input_variables=["question", "context"],
+    template=(
+        "You are an AI assistant that helps engineers understand technical information from motor datasheets. "
+        "Use the provided context to answer the question accurately. Stick to the content of the RS775-4538 motor datasheet. "
+        "If the answer is not available in the context, say you don't know.\n\n"
+        "Context:\n{context}\n\n"
+        "Question: {question}\n\n"
+        "Answer:"
+    )
+)
+
+def initialize_rs775_rag():
+    global rs775_llm, rs775_qa_chain, rs775_embedding, rs775_vectorstore, rs775_retriever, rs775_initialized
+    try:
+        print("[DEBUG] (RS775) Initializing RS775 GenAI RAG system...")
+        os.environ["GROQ_API_KEY"] = RS775_GROQ_API_KEY
+        rs775_embedding = HFEmbeddingsCommunity(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        rs775_llm = ChatGroq(api_key=RS775_GROQ_API_KEY, model_name="llama3-8b-8192", temperature=0.2)
+        rs775_vectorstore = ChromaCommunity(persist_directory=RS775_VECTOR_DB_PATH, embedding_function=rs775_embedding)
+        rs775_retriever = rs775_vectorstore.as_retriever()
+        rs775_qa_chain = LLMChain(llm=rs775_llm, prompt=rs775_prompt_template)
+        rs775_initialized = True
+        print("[DEBUG] (RS775) RS775 GenAI RAG system initialized successfully.")
+        return True
+    except Exception as e:
+        print(f"[ERROR] (RS775) Failed to initialize RS775 GenAI: {e}")
+        rs775_initialized = False
+        return False
+
+# --- RS775 Recommendation Chain and Endpoint ---
+rs775_recommend_chain = None
+
+def initialize_rs775_recommend_chain():
+    global rs775_recommend_chain, rs775_llm
+    if rs775_llm is None:
+        # Ensure LLM is initialized
+        return False
+    rs775_recommend_chain = LLMChain(llm=rs775_llm, prompt=rs775_recommend_prompt_template)
+    return True
+
+def answer_rs775_recommendation(issue):
+    global rs775_initialized, rs775_retriever, rs775_recommend_chain
+    if not rs775_initialized or not rs775_retriever or not rs775_recommend_chain:
+        return "RS775 GenAI system is not initialized. Please try again later."
+    try:
+        # Retrieve context from vectorstore
+        retrieved_docs = rs775_retriever.get_relevant_documents(issue)
+        context = " ".join([doc.page_content for doc in retrieved_docs])
+        response = rs775_recommend_chain.run(issue=issue, context=context)
+        return clean_and_format_response(response)
+    except Exception as e:
+        print(f"[ERROR] (RS775) Recommendation error: {e}")
+        return clean_and_format_response("Sorry, there was an error processing your recommendation. Please try again later.")
+
+def answer_rs775_question(question):
+    global rs775_initialized, rs775_retriever, rs775_qa_chain
+    if not rs775_initialized or not rs775_retriever or not rs775_qa_chain:
+        return "RS775 GenAI system is not initialized. Please try again later."
+    try:
+        # Retrieve context from vectorstore
+        retrieved_docs = rs775_retriever.get_relevant_documents(question)
+        context = " ".join([doc.page_content for doc in retrieved_docs])
+        response = rs775_qa_chain.run(question=question, context=context)
+        return clean_and_format_response(response)
+    except Exception as e:
+        print(f"[ERROR] (RS775) Q&A error: {e}")
+        return clean_and_format_response("Sorry, there was an error processing your question. Please try again later.")
+
+@app.route('/genai')
+def genai_chat():
+    return render_template('genai.html')
+
+@app.route('/genai-recommend')
+def genai_recommend():
+    alerts = session.get('latest_alerts', [])
+    return render_template('genai_recommend.html', alerts=alerts)
+
+@app.route('/sample-questions')
+def sample_questions():
+    questions = [
+        "Tell me schemes to increase energy efficiency in my MSME?",
+        "What is the PAT scheme and how does it work?",
+        "Explain the bemefits of installing rooftop solar panels in MSMEs.",
+        "What is the capital subsidy offered under the TEQUP scheme for MSMEs?",
+        "Recommend me a scheme for msme and give its incentives",
+        "What is UDAY and explain the incentives given by it?",
+        "Who is eligible for the Credit Linked Capital Subsidy Scheme (CLCSS) in the context of energy efficiency?"
+    ]
+    return jsonify({'questions': questions})
+
+@app.route('/health')
+def health_check():
+    # Report vectorstore status for frontend
+    return jsonify({'status': 'ok', 'vectorstore_loaded': vectorstore is not None}), 200
+
+@app.route('/ask-genai', methods=['POST'])
+def ask_genai():
+    data = request.get_json()
+    if not data or 'question' not in data:
+        print('[DEBUG] /ask-genai: No question provided in request')
+        return jsonify({'error': 'No question provided'}), 400
+    question = data['question'].strip()
+    if not question:
+        print('[DEBUG] /ask-genai: Empty question received')
+        return jsonify({'error': 'Question cannot be empty'}), 400
+    try:
+        answer = answer_rs775_question(question)
+        if not answer or not isinstance(answer, str) or not answer.strip():
+            print('[DEBUG] /ask-genai: No answer returned, using fallback message')
+            answer = 'Sorry, I could not find an answer. Please try rephrasing your question.'
+        print(f'[DEBUG] /ask-genai: Answer returned: {answer[:100]}...')
+        return jsonify({'question': question, 'answer': answer})
+    except Exception as e:
+        print(f'[DEBUG] /ask-genai: Exception: {e}')
+        return jsonify({'error': f'Error processing question: {str(e)}'}), 500
+
+@app.route('/recommend-genai', methods=['POST'])
+def recommend_genai():
+    data = request.get_json()
+    if not data or 'issue' not in data:
+        return jsonify({'error': 'No issue provided'}), 400
+    issue = data['issue'].strip()
+    if not issue:
+        return jsonify({'error': 'Issue cannot be empty'}), 400
+    try:
+        answer = answer_rs775_recommendation(issue)
+        if not answer or not isinstance(answer, str) or not answer.strip():
+            answer = 'Sorry, I could not generate a recommendation. Please try rephrasing your issue.'
+        return jsonify({'issue': issue, 'recommendation': answer})
+    except Exception as e:
+        return jsonify({'error': f'Error processing recommendation: {str(e)}'}), 500
+
+@app.route('/get-alerts')
+def get_alerts():
+    alerts = session.get('latest_alerts', [])
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_alerts = []
+    for alert in alerts:
+        if alert not in seen:
+            unique_alerts.append(alert)
+            seen.add(alert)
+    return jsonify({'alerts': unique_alerts})
+
+@app.template_filter('markdown_to_html')
+def markdown_to_html_filter(text):
+    if not text:
+        return ''
+    # Use markdown with nl2br and sane_lists for better formatting
+    return markdown.markdown(text, extensions=['nl2br', 'sane_lists'])
+
+if __name__ == '__main__':
+    print("[DEBUG] Starting unified Dashboard + Schemes app...")
+    rag_initialized = initialize_rag_system()
+    print(f"[DEBUG] RAG system initialized: {rag_initialized}")
+    if rag_initialized:
+        db_loaded = load_schemes_vectorstore()
+        print(f"[DEBUG] VectorDB loaded: {db_loaded}")
+        if db_loaded:
+            print("🎉 Full RAG system ready! Starting Flask server...")
+        else:
+            print("⚠️ Vector database not loaded. Using fallback knowledge base.")
+        # --- Initialize RS775 GenAI ---
+        rs775_initialized = initialize_rs775_rag()
+        print(f"[DEBUG] RS775 GenAI initialized: {rs775_initialized}")
+        if rs775_initialized:
+            initialize_rs775_recommend_chain()
+        else:
+            print("⚠️ RS775 GenAI initialization failed. RS775 endpoints will not work.")
+    else:
+        print("⚠️ RAG system initialization failed. Using fallback knowledge base only.")
+    os.makedirs('uploads', exist_ok=True)
+    print("[DEBUG] Flask app is about to run on http://localhost:5000 ...")
+    app.run(debug=True)
