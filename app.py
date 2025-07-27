@@ -481,7 +481,7 @@ import shutil
 # Configuration for RAG
 class SchemesConfig:
     GROQ_API_KEY = "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"
-    VECTOR_DB_PATH = r'C:\Users\Kiran\OneDrive\Desktop\IDP\Energy_Coaching_System\Energy_Coaching_System Almost Final\Dashboard\Dashboard\Schemes_DB'
+    VECTOR_DB_PATH = os.path.join(os.path.dirname(__file__), 'Schemes_DB')
 
 app.config.from_object(SchemesConfig)
 
@@ -714,7 +714,7 @@ rs775_llm = None
 rs775_embedding = None
 rs775_initialized = False
 
-RS775_VECTOR_DB_PATH = r'C:\Users\Kiran\OneDrive\Desktop\IDP\Energy_Coaching_System\Energy_Coaching_System Almost Final\Dashboard\Dashboard\Schemes_DB\RS775_VectorDB'
+RS775_VECTOR_DB_PATH = os.path.join(os.path.dirname(__file__), 'Schemes_DB', 'RS775_VectorDB')
 RS775_GROQ_API_KEY = app.config.get('GROQ_API_KEY', None)
 
 # Q&A Prompt for RS775
