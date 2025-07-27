@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 font-sans">
+    {% include '_navbar.html' %}
     <div class="flex justify-between items-center p-4">
         <div class="text-lg font-semibold text-indigo-700">
             {% if session['username'] %}
@@ -21,9 +22,10 @@
             <h1 class="text-5xl font-extrabold mb-4 drop-shadow">⚡ Energy Coaching System</h1>
             <p class="text-lg mb-4 max-w-2xl mx-auto">Welcome to the Energy Coaching System! This application helps you analyze BLDC motor data, detect issues, and get expert AI-powered recommendations and information about motors and energy schemes. Upload your motor data, view diagnostics, and use our AI assistants for technical Q&A and actionable advice.</p>
             <div class="flex flex-wrap justify-center gap-4 mt-6">
-                <a href="/schemes" class="inline-block bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 shadow-md transition">Energy Schemes AI Assistant</a>
-                <a href="/genai" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 shadow-md transition">RS775 Motor Datasheet AI Assistant</a>
-                <a href="/genai-recommend" class="inline-block bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 shadow-md transition">RS775 Motor Recommendation Assistant</a>
+            <a href="/dashboard" class="inline-block bg-yellow-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-yellow-700 shadow-md transition">Dashboard (View & Analyze Data)</a>
+            <a href="/schemes" class="inline-block bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 shadow-md transition">Energy Schemes AI Assistant</a>
+            <a href="/genai" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 shadow-md transition">RS775 Motor Datasheet AI Assistant</a>
+            <a href="/genai-recommend" class="inline-block bg-purple-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-purple-700 shadow-md transition">RS775 Motor Recommendation Assistant</a>
             </div>
         </section>
 

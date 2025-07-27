@@ -4,29 +4,184 @@
     <meta charset="UTF-8">
     <title>Admin Dashboard</title>
     <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        body { background: linear-gradient(135deg, #6366f1 0%, #60a5fa 100%); color: #222; font-family: 'Segoe UI', sans-serif; margin: 0; }
+        .admin-container { max-width: 900px; margin: 40px auto; background: rgba(255,255,255,0.95); border-radius: 18px; box-shadow: 0 4px 24px rgba(99,102,241,0.12); padding: 36px 40px; }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+        .admin-title { font-size: 2.2em; font-weight: 700; color: #6366f1; letter-spacing: 1px; }
+        .admin-summary { background: #eef2ff; border-radius: 12px; padding: 18px 24px; margin-bottom: 28px; box-shadow: 0 2px 8px rgba(99,102,241,0.06); }
+        .admin-actions { margin-bottom: 24px; }
+        .admin-actions button { background: #6366f1; color: #fff; font-weight: 600; border: none; border-radius: 8px; padding: 10px 22px; margin-right: 12px; cursor: pointer; transition: background 0.2s; }
+        .admin-actions button:hover { background: #4b2991; }
+        table { width: 100%; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(99,102,241,0.04); }
+        th, td { padding: 14px 18px; text-align: left; }
+        th { background: #6366f1; color: #fff; font-size: 1.1em; }
+        tr:nth-child(even) { background: #f3f4f6; }
+        tr:nth-child(odd) { background: #fff; }
+        .logout-btn { background: #ef4444; color: #fff; font-weight: 700; border: none; border-radius: 8px; padding: 10px 22px; cursor: pointer; transition: background 0.2s; }
+        .logout-btn:hover { background: #b91c1c; }
+        @media (max-width: 700px) {
+            .admin-container { padding: 16px 6px; }
+            .admin-title { font-size: 1.3em; }
+        }
+    </style>
 </head>
 <body>
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-indigo-700">User Data</h2>
-        <a href="/logout" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded shadow transition">Logout</a>
-    </div>
-    <div class="overflow-x-auto">
-        <table class="min-w-full bg-white rounded shadow">
-            <thead class="bg-indigo-100">
+    <div class="admin-container">
+        <div class="admin-header">
+            <div class="admin-title">Admin Dashboard</div>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+        <div class="admin-summary">
+            <b>Total Users:</b> {{ users|length }}<br>
+            <b>Admins:</b> {{ users|selectattr('is_admin')|list|length }}<br>
+        </div>
+        <div class="admin-actions">
+            <button onclick="location.href='/register'">Add New User</button>
+            <button onclick="location.href='/dashboard'">View Dashboard</button>
+        </div>
+        <table>
+            <thead>
                 <tr>
-                    <th class="py-2 px-4 text-left">Username</th>
-                    <th class="py-2 px-4 text-left">Admin</th>
+                    <th>Username</th>
+                    <th>Admin</th>
+                    <th>Delete</th>
                 </tr>
             </thead>
             <tbody>
                 {% for user in users %}
-                <tr class="border-b">
-                    <td class="py-2 px-4">{{ user.username }}</td>
-                    <td class="py-2 px-4">{{ user.is_admin }}</td>
+                <tr>
+                    <td><a href="#" class="user-link" data-username="{{ user.username }}" data-isadmin="{{ user.is_admin }}">{{ user.username }}</a></td>
+                    <td>{% if user.is_admin %}<span style="color:#10b981;font-weight:600;">Yes</span>{% else %}<span style="color:#ef4444;font-weight:600;">No</span>{% endif %}</td>
+                    <td><button class="delete-user-btn" data-username="{{ user.username }}" style="background:#ef4444;color:#fff;font-weight:600;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;">Delete</button></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+
+        <div style="margin-top:48px;">
+            <h3 style="color:#6366f1;font-size:1.3em;margin-bottom:18px;">User Activity Overview</h3>
+            <div id="activity-graph"></div>
+        </div>
+        <script id="activity-data" type="application/json">{{ activities|tojson }}</script>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script>
+        // Prepare activity data for Plotly
+        var activities = JSON.parse(document.getElementById('activity-data').textContent);
+        var actionCounts = {};
+        activities.forEach(function(act){
+            actionCounts[act.action] = (actionCounts[act.action]||0)+1;
+        });
+        var actions = Object.keys(actionCounts);
+        var counts = actions.map(function(a){ return actionCounts[a]; });
+        var data = [{
+            x: actions,
+            y: counts,
+            type: 'bar',
+            marker: { color: '#6366f1' }
+        }];
+        var layout = {
+            title: 'User Activity by Action',
+            xaxis: { title: 'Action Type' },
+            yaxis: { title: 'Count' },
+            plot_bgcolor: '#eef2ff',
+            paper_bgcolor: '#fff',
+            font: { family: 'Segoe UI', color: '#222' }
+        };
+        Plotly.newPlot('activity-graph', data, layout, {responsive:true});
+        </script>
+        <!-- User Details Modal -->
+        <div id="userModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.3);z-index:1000;align-items:center;justify-content:center;">
+            <div style="background:#fff;padding:40px 48px;border-radius:18px;max-width:650px;width:90vw;margin:auto;box-shadow:0 4px 24px rgba(99,102,241,0.18);position:relative;">
+                <span id="closeModal" style="position:absolute;top:12px;right:18px;font-size:1.5em;cursor:pointer;color:#6366f1;">&times;</span>
+                <h3 style="color:#6366f1;font-size:1.4em;margin-bottom:18px;">User Details</h3>
+                <div><b>Username:</b> <span id="modalUsername"></span></div>
+                <div style="margin-top:12px;"><b>Admin:</b> <span id="modalIsAdmin"></span></div>
+                <button id="toggleAdminBtn" style="margin-top:22px;background:#6366f1;color:#fff;font-weight:600;border:none;border-radius:8px;padding:10px 22px;cursor:pointer;transition:background 0.2s;">Toggle Admin Status</button>
+                <div style="margin-top:28px;">
+                    <h4 style="color:#6366f1;font-size:1.1em;margin-bottom:10px;text-align:center;">User Activity Overview</h4>
+                    <div style="display:flex;justify-content:center;align-items:center;">
+                        <div id="user-activity-graph" style="width:600px;height:380px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+        // Modal logic
+        document.querySelectorAll('.user-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                var username = this.getAttribute('data-username');
+                var isAdmin = this.getAttribute('data-isadmin') === 'True' || this.getAttribute('data-isadmin') === 'true';
+                document.getElementById('modalUsername').textContent = username;
+                document.getElementById('modalIsAdmin').textContent = isAdmin ? 'Yes' : 'No';
+                document.getElementById('toggleAdminBtn').textContent = isAdmin ? 'Revoke Admin' : 'Make Admin';
+                document.getElementById('userModal').style.display = 'flex';
+                document.getElementById('toggleAdminBtn').onclick = function() {
+                    fetch('/toggle_admin', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username })
+                    }).then(resp => resp.json()).then(data => {
+                        if(data.success){
+                            document.getElementById('modalIsAdmin').textContent = data.is_admin ? 'Yes' : 'No';
+                            document.getElementById('toggleAdminBtn').textContent = data.is_admin ? 'Revoke Admin' : 'Make Admin';
+                            location.reload();
+                        }else{
+                            alert('Failed to update admin status.');
+                        }
+                    });
+                };
+                // User-specific activity graph
+                var activities = JSON.parse(document.getElementById('activity-data').textContent);
+                var userActs = activities.filter(function(act){ return act.username === username; });
+                var actionCounts = {};
+                userActs.forEach(function(act){
+                    actionCounts[act.action] = (actionCounts[act.action]||0)+1;
+                });
+                var actions = Object.keys(actionCounts);
+                var counts = actions.map(function(a){ return actionCounts[a]; });
+                var data = [{
+                    x: actions,
+                    y: counts,
+                    type: 'bar',
+                    marker: { color: '#6366f1' }
+                }];
+                var layout = {
+                    xaxis: { title: 'Action Type', tickangle: -30 },
+                    yaxis: { title: 'Count' },
+                    plot_bgcolor: '#eef2ff',
+                    paper_bgcolor: '#fff',
+                    font: { family: 'Segoe UI', color: '#222' },
+                    width: 600,
+                    height: 380,
+                    margin: { t: 40, l: 60, r: 30, b: 80 }
+                };
+                Plotly.newPlot('user-activity-graph', data, layout, {displayModeBar: true, responsive: true});
+            });
+        });
+        document.querySelectorAll('.delete-user-btn').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                var username = this.getAttribute('data-username');
+                if(confirm('Are you sure you want to delete user "' + username + '"?')){
+                    fetch('/delete_user', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username })
+                    }).then(resp => resp.json()).then(data => {
+                        if(data.success){
+                            location.reload();
+                        }else{
+                            alert('Failed to delete user.');
+                        }
+                    });
+                }
+            });
+        });
+        document.getElementById('closeModal').onclick = function() {
+            document.getElementById('userModal').style.display = 'none';
+        };
+        </script>
     </div>
 </body>
 </html>
