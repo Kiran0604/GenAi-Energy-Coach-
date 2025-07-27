@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS775 Motor Datasheet AI Assistant</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .chat-container { width: 90%; max-width: 800px; height: 90vh; background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column; overflow: hidden; }
+        .chat-header { background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%); color: white; padding: 20px; text-align: center; border-radius: 20px 20px 0 0; }
+        .chat-header h1 { font-size: 24px; margin-bottom: 5px; }
+        .chat-header p { font-size: 14px; opacity: 0.9; }
+        .status-indicator { display: inline-block; width: 10px; height: 10px; background: #4CAF50; border-radius: 50%; margin-left: 10px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .chat-messages { flex: 1; padding: 20px; overflow-y: auto; background: #f8f9fa; }
+        .message { margin-bottom: 20px; animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .message.user { text-align: right; }
+        .message.bot { text-align: left; }
+        .message-content { display: inline-block; max-width: 70%; padding: 15px 20px; border-radius: 20px; word-wrap: break-word; }
+        .message.user .message-content { background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%); color: white; border-bottom-right-radius: 5px; }
+        .message.bot .message-content { background: white; color: #333; border: 1px solid #e0e0e0; border-bottom-left-radius: 5px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+        .chat-input-container { padding: 20px; background: white; border-top: 1px solid #e0e0e0; }
+        .chat-input-form { display: flex; gap: 10px; }
+        .chat-input { flex: 1; padding: 15px 20px; border: 2px solid #e0e0e0; border-radius: 25px; font-size: 16px; outline: none; transition: border-color 0.3s ease; }
+        .chat-input:focus { border-color: #43cea2; }
+        .send-button { padding: 15px 30px; background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%); color: white; border: none; border-radius: 25px; cursor: pointer; font-size: 16px; font-weight: 600; transition: all 0.3s ease; }
+        .send-button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(33, 150, 243, 0.4); }
+        .send-button:disabled { background: #ccc; cursor: not-allowed; transform: none; box-shadow: none; }
+        .sample-questions { margin-bottom: 20px; }
+        .sample-questions h3 { color: #666; margin-bottom: 10px; font-size: 16px; }
+        .sample-question { display: inline-block; background: #e0f7fa; color: #185a9d; padding: 8px 15px; margin: 5px; border-radius: 15px; cursor: pointer; font-size: 14px; transition: all 0.3s ease; border: 1px solid #b2ebf2; }
+        .sample-question:hover { background: #43cea2; color: white; transform: translateY(-1px); }
+        .loading { display: none; text-align: center; padding: 10px; color: #666; }
+        .loading.show { display: block; }
+        .typing-indicator { display: none; padding: 10px 20px; background: white; border-radius: 20px; border-bottom-left-radius: 5px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 70%; }
+        .typing-indicator.show { display: block; }
+        .typing-dots { display: flex; gap: 4px; }
+        .typing-dot { width: 8px; height: 8px; background: #666; border-radius: 50%; animation: typing 1.4s infinite ease-in-out; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing { 0%, 80%, 100% { transform: scale(0); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
+        .error-message { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+        @media (max-width: 768px) { .chat-container { width: 95%; height: 95vh; border-radius: 15px; } .message-content { max-width: 85%; } .chat-input-form { flex-direction: column; } .send-button { width: 100%; } }
+    </style>
+</head>
+<body>
+    <div class="center-container">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>⚙️ RS775 Motor Datasheet AI Assistant</h1>
+                <p>Ask technical questions about the RS775-4538 DC motor datasheet <span class="status-indicator"></span></p>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <div class="sample-questions">
+                    <h3>💡 Sample Questions:</h3>
+                    <div class="sample-question" onclick="askSampleQuestion('What is the stall torque of the RS775 motor?')">What is the stall torque of the RS775 motor?</div>
+                    <div class="sample-question" onclick="askSampleQuestion('What is the maximum continuous current the motor can handle safely?')">Max Continuous Current</div>
+                    <div class="sample-question" onclick="askSampleQuestion('What are the recommended operating practices?')">Recommended Operating Practices</div>
+                    <div class="sample-question" onclick="askSampleQuestion('What is the rated voltage and speed?')">Rated Voltage & Speed</div>
+                </div>
+                <div class="message bot">
+                    <div class="message-content">
+                        {{ bot_answer|markdown_to_html|safe if bot_answer else '👋 Welcome! I\'m your AI assistant for the RS775-4538 DC motor datasheet. Ask me about technical specs, safe operating limits, or best practices for this motor. Click a sample question or type your own below!' }}
+                    </div>
+                </div>
+                <div class="typing-indicator" id="typingIndicator">
+                    <div class="typing-dots">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+                <div class="loading" id="loadingIndicator">Loading...</div>
+            </div>
+            <div class="chat-input-container">
+                <form class="chat-input-form" id="chatForm">
+                    <input type="text" class="chat-input" id="chatInput" placeholder="Type your question..." autocomplete="off" required />
+                    <button type="submit" class="send-button">Send</button>
+                </form>
+            </div>
+        </div>
+        <a href="/" class="btn">Back to Dashboard</a>
+    </div>
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const chatForm = document.getElementById('chatForm');
+        const userInput = document.getElementById('chatInput');
+        const sendButton = document.querySelector('.send-button'); // Fix selector for sendButton
+        const typingIndicator = document.getElementById('typingIndicator');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        userInput.focus();
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = userInput.value.trim();
+            if (!question) return;
+            addMessage(question, 'user');
+            userInput.value = '';
+            setFormDisabled(true);
+            showTypingIndicator();
+            try {
+                const response = await fetch('/ask-genai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: question })
+                });
+                const data = await response.json();
+                console.log('GenAI response:', data); // Debug
+                hideTypingIndicator();
+                let answer = (data && typeof data.answer === 'string') ? data.answer.trim() : '';
+                if (!answer && data && data.error) {
+                    answer = '❌ ' + data.error;
+                }
+                if (!answer) {
+                    answer = 'Sorry, I could not generate an answer for your question. Please try rephrasing or ask about another aspect of the RS775 motor.';
+                }
+                addMessage(answer, 'bot');
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('❌ Network error. Please check your connection and try again.', 'bot error-message');
+                console.error('GenAI fetch error:', error);
+            }
+            setFormDisabled(false);
+            userInput.focus();
+        });
+
+        function addMessage(content, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            // If the content starts with our justify div, render as HTML, else as text
+            if (typeof content === 'string' && content.trim().startsWith('<div style="text-align:justify;white-space:pre-line;">')) {
+                contentDiv.innerHTML = content;
+            } else {
+                contentDiv.textContent = content;
+            }
+            messageDiv.appendChild(contentDiv);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function askSampleQuestion(question) {
+            userInput.value = question;
+            chatForm.dispatchEvent(new Event('submit'));
+        }
+
+        function setFormDisabled(disabled) {
+            userInput.disabled = disabled;
+            sendButton.disabled = disabled;
+            sendButton.textContent = disabled ? 'Sending...' : 'Send';
+        }
+
+        function showTypingIndicator() {
+            typingIndicator.classList.add('show');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            typingIndicator.classList.remove('show');
+        }
+    </script>
+</body>
+</html>
