@@ -20,6 +20,7 @@ app.secret_key = 'your_secret_key_here'  # Needed for session
 @app.route('/admin-login', methods=['GET', 'POST'])
 def admin_login():
     error = None
+    issue_points_graph_html = None  # New graph for V, I, T with issue highlights
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -59,12 +60,18 @@ def dashboard():
     df = None
     separate_graphs = {}  # Ensure always defined
     insights = {}  # Ensure always defined
+    alert_graph_html = None  # Ensure always defined
+    issue_points_graph_html = None  # Ensure always defined
+    from users_db import log_user_activity
+    log_user_activity(session.get('username'), 'view_dashboard')
     if request.method == 'POST':
         # Handle clear button
         if request.form.get('clear') == '1':
+            log_user_activity(session.get('username'), 'clear_dashboard')
             return render_template('dashboard.html', plot_html=None, summary_stats=None, alerts=None, latest_data=None, metrics=metrics, selected_metrics=metrics)
         file = request.files.get('csv_file')
         if file and file.filename.endswith('.csv'):
+            log_user_activity(session.get('username'), 'upload_file', {'filename': file.filename})
             filename = secure_filename(file.filename)
             filepath = os.path.join('uploads', filename)
             os.makedirs('uploads', exist_ok=True)
@@ -79,6 +86,15 @@ def dashboard():
                 df[f'{m}_ma7'] = df[m].rolling(window=7, min_periods=1).mean()
                 df[f'{m}_ma30'] = df[m].rolling(window=30, min_periods=1).mean()
 
+
+            # Alerts (reuse existing logic)
+            alerts += df.apply(detect_overheating_row, axis=1).explode().dropna().tolist()
+            alerts += df.apply(detect_voltage_drop_row, axis=1).explode().dropna().tolist()
+            alerts += [a for i, row in df.iterrows() for a in detect_current_spike(df.iloc[i-1] if i > 0 else None, row)]
+            alerts += df.apply(estimate_efficiency_row, axis=1).explode().dropna().tolist()
+            avg_p, peak_p = compute_power_stats(df)
+            alerts.append(f"Average power: {avg_p:.1f} W, Peak power: {peak_p:.1f} W")
+
             # Plotly line chart for all metrics and their moving averages (solid lines only)
             fig = go.Figure()
             for m in metrics:
@@ -86,7 +102,94 @@ def dashboard():
                 fig.add_trace(go.Scatter(x=df['timestamp'], y=df[f'{m}_ma7'], mode='lines', name=f'{m.title()} 7-day MA'))
                 fig.add_trace(go.Scatter(x=df['timestamp'], y=df[f'{m}_ma30'], mode='lines', name=f'{m.title()} 30-day MA'))
             fig.update_layout(title='Time-Series Analysis', xaxis_title='Timestamp', yaxis_title='Value', template='plotly_white')
-            plot_html = pio.to_html(fig, full_html=False)
+            plotly_config = {
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToAdd': ['toggleFullscreen']
+            }
+            plot_html = pio.to_html(fig, full_html=False, config=plotly_config)
+
+            # Alerts graph: show alerts as red circle points on timeline
+            alert_graph_html = None
+            issue_points_graph_html = None
+            if alerts:
+                import re
+                alert_times = []
+                alert_texts = []
+                for alert in alerts:
+                    match = re.match(r'\[(.*?)\]', alert)
+                    if match:
+                        alert_times.append(match.group(1))
+                        alert_texts.append(alert)
+                if alert_times:
+                    alert_fig = go.Figure()
+                    alert_fig.add_trace(go.Scatter(
+                        x=alert_times,
+                        y=[1]*len(alert_times),
+                        mode='markers',
+                        marker=dict(color='red', size=12, symbol='circle'),
+                        text=alert_texts,
+                        name='Alerts',
+                        hoverinfo='text'
+                    ))
+                    alert_fig.update_layout(
+                        title='Alerts Timeline',
+                        xaxis_title='Timestamp',
+                        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                        template='plotly_white',
+                        height=250
+                    )
+                    alert_graph_html = pio.to_html(alert_fig, full_html=False, config=plotly_config)
+
+                    # --- New: Plot V, I, T with issue points highlighted ---
+                    # For each metric, plot the time series and overlay red circles at alert timestamps
+                    metrics_to_plot = ['voltage', 'current', 'temperature']
+                    issue_fig = go.Figure()
+                    colors = {'voltage': 'blue', 'current': 'green', 'temperature': 'orange'}
+                    for m in metrics_to_plot:
+                        issue_fig.add_trace(go.Scatter(
+                            x=df['timestamp'],
+                            y=df[m],
+                            mode='lines',
+                            name=m.title(),
+                            line=dict(color=colors[m])
+                        ))
+                    # Find issue points for each metric
+                    for m in metrics_to_plot:
+                        # Find alert timestamps for this metric
+                        m_alert_times = []
+                        m_alert_values = []
+                        for alert in alerts:
+                            match = re.match(r'\[(.*?)\]', alert)
+                            if match and m in alert.lower():
+                                ts = match.group(1)
+                                # Find value at this timestamp
+                                val = None
+                                try:
+                                    val = df.loc[df['timestamp'].astype(str) == ts, m].values[0]
+                                except Exception:
+                                    continue
+                                m_alert_times.append(ts)
+                                m_alert_values.append(val)
+                        if m_alert_times:
+                            issue_fig.add_trace(go.Scatter(
+                                x=m_alert_times,
+                                y=m_alert_values,
+                                mode='markers',
+                                marker=dict(color='red', size=7, symbol='diamond'),
+                                name=f'{m.title()} Issue',
+                                text=[f'{m.title()} Issue' for _ in m_alert_times],
+                                hoverinfo='text'
+                            ))
+                    issue_fig.update_layout(
+                        title='V, I, T Data with Issue Points Highlighted',
+                        xaxis_title='Timestamp',
+                        yaxis_title='Value',
+                        template='plotly_white',
+                        height=400
+                    )
+                    issue_points_graph_html = pio.to_html(issue_fig, full_html=False, config=plotly_config)
+                    print('[DEBUG] issue_points_graph_html:', issue_points_graph_html[:200])
 
             # Individual graphs for each metric: raw, 7-day MA, 30-day MA (solid lines only)
             separate_graphs = {}
@@ -103,7 +206,7 @@ def dashboard():
                 except Exception:
                     pass
                 fig_sep.update_layout(title=f'{m.title()} Decomposition', xaxis_title='Timestamp', yaxis_title=m.title(), template='plotly_white')
-                separate_graphs[m] = pio.to_html(fig_sep, full_html=False)
+                separate_graphs[m] = pio.to_html(fig_sep, full_html=False, config=plotly_config)
 
             # Advanced analytics: trend, seasonality, forecast
             decomposition_results = {}
@@ -151,17 +254,19 @@ def dashboard():
             for m in ['voltage', 'current', 'temperature']:
                 try:
                     summary_stats[f'{m}_mean'] = float(df[m].mean())
+                    summary_stats[f'{m}_median'] = float(df[m].median())
+                    summary_stats[f'{m}_min'] = float(df[m].min())
+                    summary_stats[f'{m}_max'] = float(df[m].max())
+                    summary_stats[f'{m}_std'] = float(df[m].std())
+                    summary_stats[f'{m}_count'] = int(df[m].count())
                 except Exception:
                     summary_stats[f'{m}_mean'] = None
+                    summary_stats[f'{m}_median'] = None
+                    summary_stats[f'{m}_min'] = None
+                    summary_stats[f'{m}_max'] = None
+                    summary_stats[f'{m}_std'] = None
+                    summary_stats[f'{m}_count'] = None
             summary_stats['forecast'] = forecast
-
-            # Alerts (reuse existing logic)
-            alerts += df.apply(detect_overheating_row, axis=1).explode().dropna().tolist()
-            alerts += df.apply(detect_voltage_drop_row, axis=1).explode().dropna().tolist()
-            alerts += [a for i, row in df.iterrows() for a in detect_current_spike(df.iloc[i-1] if i > 0 else None, row)]
-            alerts += df.apply(estimate_efficiency_row, axis=1).explode().dropna().tolist()
-            avg_p, peak_p = compute_power_stats(df)
-            alerts.append(f"Average power: {avg_p:.1f} W, Peak power: {peak_p:.1f} W")
 
             # Latest data
             latest_data = df.iloc[-1].to_dict()
@@ -194,7 +299,7 @@ def dashboard():
                     pdf_output.seek(0)
                     return (pdf_output.read(), 200, {'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename=analytics.pdf'})
 
-    return render_template('dashboard.html', plot_html=plot_html, summary_stats=summary_stats, alerts=alerts, latest_data=latest_data, metrics=metrics, separate_graphs=separate_graphs, insights=insights)
+    return render_template('dashboard.html', plot_html=plot_html, alert_graph_html=alert_graph_html, issue_points_graph_html=issue_points_graph_html, summary_stats=summary_stats, alerts=alerts, latest_data=latest_data, metrics=metrics, separate_graphs=separate_graphs, insights=insights)
 
 # --- Global flag to track app restart for context reset ---
 app_restart_flag = {'cleared': False}
@@ -226,6 +331,8 @@ def login():
         if user:
             session['username'] = user['username']
             session['is_admin'] = user.get('is_admin', False)
+            from users_db import log_user_activity
+            log_user_activity(username, 'login')
             if session['is_admin']:
                 return redirect('/admin')
             else:
@@ -255,6 +362,8 @@ def register():
 
 @app.route('/logout')
 def logout():
+    from users_db import log_user_activity
+    log_user_activity(session.get('username'), 'logout')
     session.clear()
     return redirect('/login')
 
@@ -263,9 +372,10 @@ def logout():
 def admin():
     if not session.get('is_admin'):
         return redirect('/')
-    from users_db import get_all_users
+    from users_db import get_all_users, get_all_user_activities
     users = get_all_users()
-    return render_template('admin.html', users=users)
+    activities = get_all_user_activities()
+    return render_template('admin.html', users=users, activities=activities)
 # Diagnostic functions
 TEMP_THRESHOLD = 70.0
 VOLTAGE_MIN = 20.0
@@ -521,13 +631,44 @@ def tutorials():
 def faqs():
     return render_template('faqs.html')
 
-@app.route('/best-practices')
+@app.route('/best_practices')
 def best_practices():
     return render_template('best_practices.html')
 
 @app.route('/guides')
 def guides():
     return render_template('guides.html')
+
+@app.route('/toggle_admin', methods=['POST'])
+def toggle_admin():
+    data = request.get_json()
+    username = data.get('username')
+    if not username:
+        return jsonify({'success': False, 'error': 'No username provided'}), 400
+    from users_db import get_all_users, update_user_admin_status
+    users = get_all_users()
+    user = next((u for u in users if u['username'] == username), None)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    new_status = not user.get('is_admin', False)
+    success = update_user_admin_status(username, new_status)
+    if success:
+        return jsonify({'success': True, 'is_admin': new_status})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to update status'}), 500
+
+@app.route('/delete_user', methods=['POST'])
+def delete_user_route():
+    data = request.get_json()
+    username = data.get('username')
+    if not username:
+        return jsonify({'success': False, 'error': 'No username provided'}), 400
+    from users_db import delete_user
+    success = delete_user(username)
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to delete user'}), 500
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
