@@ -18,3 +18,4 @@ langchain-groq>=0.1.0
 langchain-huggingface>=0.1.0
 langchain-community>=0.1.0
 markdown>=3.4.0
+guicorn
