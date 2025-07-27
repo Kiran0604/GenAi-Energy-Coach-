@@ -1,10 +1,3 @@
-from flask import Flask, render_template, jsonify, request, redirect, session
-import pandas as pd
-import numpy as np
-
-
-# Place admin-login route after app initialization
-
 import os
 import subprocess
 import sys
@@ -16,6 +9,9 @@ from flask import Flask, render_template, jsonify, request, redirect, session
 import pandas as pd
 import numpy as np
 from werkzeug.utils import secure_filename
+# --- Plotly imports for dashboard visualization ---
+import plotly.graph_objs as go
+import plotly.io as pio
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Needed for session
@@ -35,6 +31,170 @@ def admin_login():
         else:
             error = 'Invalid admin credentials.'
     return render_template('admin_login.html', error=error)
+
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return redirect('/login')
+        return f(*args, **kwargs)
+    return decorated_function
+
+# --- Dashboard route for time-series analytics and Plotly visualization ---
+
+@app.route('/dashboard', methods=['GET', 'POST'])
+@login_required
+def dashboard():
+    import io
+    import base64
+    from statsmodels.tsa.seasonal import seasonal_decompose
+    plot_html = None
+    summary_stats = {}
+    alerts = []
+    latest_data = None
+    metrics = ['voltage', 'current', 'temperature']
+    selected_metrics = request.form.getlist('metrics') if request.method == 'POST' else metrics
+    export_type = request.form.get('export') if request.method == 'POST' else None
+    df = None
+    separate_graphs = {}  # Ensure always defined
+    insights = {}  # Ensure always defined
+    if request.method == 'POST':
+        # Handle clear button
+        if request.form.get('clear') == '1':
+            return render_template('dashboard.html', plot_html=None, summary_stats=None, alerts=None, latest_data=None, metrics=metrics, selected_metrics=metrics)
+        file = request.files.get('csv_file')
+        if file and file.filename.endswith('.csv'):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join('uploads', filename)
+            os.makedirs('uploads', exist_ok=True)
+            file.save(filepath)
+            df = pd.read_csv(filepath, parse_dates=['timestamp'])
+            # Time-series analysis: rolling mean (window=10)
+            for m in metrics:
+                df[f'{m}_ma'] = df[m].rolling(window=10, min_periods=1).mean()
+
+            # Add 7-day and 30-day moving averages for each metric
+            for m in metrics:
+                df[f'{m}_ma7'] = df[m].rolling(window=7, min_periods=1).mean()
+                df[f'{m}_ma30'] = df[m].rolling(window=30, min_periods=1).mean()
+
+            # Plotly line chart for all metrics and their moving averages (solid lines only)
+            fig = go.Figure()
+            for m in metrics:
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df[m], mode='lines', name=f'{m.title()}'))
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df[f'{m}_ma7'], mode='lines', name=f'{m.title()} 7-day MA'))
+                fig.add_trace(go.Scatter(x=df['timestamp'], y=df[f'{m}_ma30'], mode='lines', name=f'{m.title()} 30-day MA'))
+            fig.update_layout(title='Time-Series Analysis', xaxis_title='Timestamp', yaxis_title='Value', template='plotly_white')
+            plot_html = pio.to_html(fig, full_html=False)
+
+            # Individual graphs for each metric: raw, 7-day MA, 30-day MA (solid lines only)
+            separate_graphs = {}
+            for m in metrics:
+                fig_sep = go.Figure()
+                # Raw data
+                fig_sep.add_trace(go.Scatter(x=df['timestamp'], y=df[m], mode='lines', name=f'{m.title()}'))
+                # Decomposition: trend, seasonality, residuals
+                try:
+                    result = seasonal_decompose(df[m], model='additive', period=10, extrapolate_trend='freq')
+                    fig_sep.add_trace(go.Scatter(x=df['timestamp'], y=result.trend, mode='lines', name=f'{m.title()} Trend'))
+                    fig_sep.add_trace(go.Scatter(x=df['timestamp'], y=result.seasonal, mode='lines', name=f'{m.title()} Seasonality'))
+                    fig_sep.add_trace(go.Scatter(x=df['timestamp'], y=result.resid, mode='lines', name=f'{m.title()} Residuals'))
+                except Exception:
+                    pass
+                fig_sep.update_layout(title=f'{m.title()} Decomposition', xaxis_title='Timestamp', yaxis_title=m.title(), template='plotly_white')
+                separate_graphs[m] = pio.to_html(fig_sep, full_html=False)
+
+            # Advanced analytics: trend, seasonality, forecast
+            decomposition_results = {}
+            for m in selected_metrics:
+                try:
+                    result = seasonal_decompose(df[m], model='additive', period=10, extrapolate_trend='freq')
+                    decomposition_results[m] = {
+                        'trend': result.trend.tolist(),
+                        'seasonal': result.seasonal.tolist(),
+                        'resid': result.resid.tolist()
+                    }
+                except Exception:
+                    decomposition_results[m] = None
+
+            # Simple forecast: next value = last moving average
+            forecast = {m: df[f'{m}_ma'].iloc[-1] if f'{m}_ma' in df else None for m in selected_metrics}
+
+            # Dynamic insights for each metric
+            insights = {}
+            for m in metrics:
+                vals = df[m].dropna()
+                ma7 = df[f'{m}_ma7'].dropna()
+                ma30 = df[f'{m}_ma30'].dropna()
+                latest = vals.iloc[-1] if not vals.empty else None
+                mean = vals.mean() if not vals.empty else None
+                maxv = vals.max() if not vals.empty else None
+                minv = vals.min() if not vals.empty else None
+                trend = 'increasing' if len(ma30) > 1 and ma30.iloc[-1] > ma30.iloc[0] else 'decreasing' if len(ma30) > 1 and ma30.iloc[-1] < ma30.iloc[0] else 'stable'
+                insight = f"<b>{m.title()}:</b> "
+                if latest is not None:
+                    insight += f"Latest value is <b>{latest:.2f}</b>. "
+                if mean is not None:
+                    insight += f"Average is <b>{mean:.2f}</b>. "
+                if maxv is not None and minv is not None:
+                    insight += f"Range: <b>{minv:.2f}</b> to <b>{maxv:.2f}</b>. "
+                insight += f"Trend over time is <b>{trend}</b>. "
+                if trend == 'increasing' and latest > mean:
+                    insight += "Monitor for possible spikes. "
+                elif trend == 'decreasing' and latest < mean:
+                    insight += "Possible improvement or drop detected. "
+                insights[m] = insight
+
+            # Summary stats (always show for voltage, current, temperature)
+            summary_stats = {}
+            for m in ['voltage', 'current', 'temperature']:
+                try:
+                    summary_stats[f'{m}_mean'] = float(df[m].mean())
+                except Exception:
+                    summary_stats[f'{m}_mean'] = None
+            summary_stats['forecast'] = forecast
+
+            # Alerts (reuse existing logic)
+            alerts += df.apply(detect_overheating_row, axis=1).explode().dropna().tolist()
+            alerts += df.apply(detect_voltage_drop_row, axis=1).explode().dropna().tolist()
+            alerts += [a for i, row in df.iterrows() for a in detect_current_spike(df.iloc[i-1] if i > 0 else None, row)]
+            alerts += df.apply(estimate_efficiency_row, axis=1).explode().dropna().tolist()
+            avg_p, peak_p = compute_power_stats(df)
+            alerts.append(f"Average power: {avg_p:.1f} W, Peak power: {peak_p:.1f} W")
+
+            # Latest data
+            latest_data = df.iloc[-1].to_dict()
+            latest_data['energy'] = df['energy'].sum() if 'energy' in df else 0
+
+            # Export logic
+            if export_type and df is not None:
+                if export_type == 'csv':
+                    output = io.StringIO()
+                    df.to_csv(output, index=False)
+                    return (output.getvalue(), 200, {'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=analytics.csv'})
+                elif export_type == 'excel':
+                    output = io.BytesIO()
+                    df.to_excel(output, index=False)
+                    output.seek(0)
+                    return (output.read(), 200, {'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename=analytics.xlsx'})
+                elif export_type == 'pdf':
+                    import matplotlib.pyplot as plt
+                    from matplotlib.backends.backend_pdf import PdfPages
+                    pdf_output = io.BytesIO()
+                    with PdfPages(pdf_output) as pdf:
+                        for m in selected_metrics:
+                            plt.figure(figsize=(8,4))
+                            plt.plot(df['timestamp'], df[m], label=m)
+                            plt.plot(df['timestamp'], df[f'{m}_ma'], label=f'{m}_ma')
+                            plt.title(f'{m.title()} Time-Series')
+                            plt.legend()
+                            pdf.savefig()
+                            plt.close()
+                    pdf_output.seek(0)
+                    return (pdf_output.read(), 200, {'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename=analytics.pdf'})
+
+    return render_template('dashboard.html', plot_html=plot_html, summary_stats=summary_stats, alerts=alerts, latest_data=latest_data, metrics=metrics, separate_graphs=separate_graphs, insights=insights)
 
 # --- Global flag to track app restart for context reset ---
 app_restart_flag = {'cleared': False}
@@ -199,9 +359,9 @@ def results():
     return redirect('/')
 
 # --- Energy Schemes AI Assistant (RAG) Integration ---
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain_core.runnables import RunnableSequence
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 import zipfile
@@ -222,7 +382,7 @@ llm = None
 embedding = None
 
 def initialize_rag_system():
-    global llm, qa_chain, embedding
+    global llm, qa_chain, embedding, prompt_template
     try:
         os.environ["GROQ_API_KEY"] = app.config['GROQ_API_KEY']
         embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -250,7 +410,7 @@ def initialize_rag_system():
                 "Answer:"
             )
         )
-        qa_chain = LLMChain(llm=llm, prompt=prompt_template)
+        qa_chain = prompt_template | llm
         return True
     except Exception as e:
         print(f"❌ Error initializing RAG system: {e}")
@@ -329,7 +489,6 @@ def clean_and_format_response(response):
     return f'<div style="text-align:justify;white-space:pre-line;">{response}</div>'
 
 def answer_question_with_rag(question):
-
     if retriever and qa_chain:
         try:
             retrieved_docs = retriever.get_relevant_documents(question)
@@ -339,7 +498,7 @@ def answer_question_with_rag(question):
                 retrieved_docs = vectorstore.similarity_search(question, k=5)
             if retrieved_docs:
                 context = " ".join([doc.page_content for doc in retrieved_docs])
-                response = qa_chain.run(question=question, context=context)
+                response = qa_chain.invoke({"question": question, "context": context})
                 print("[DEBUG] RAG: Answer generated from vectorstore context. Returning used_vector_db=True.")
                 return clean_and_format_response(response), True
             else:
@@ -348,12 +507,27 @@ def answer_question_with_rag(question):
             print(f"RAG error: {e}")
     print("[DEBUG] RAG: Using fallback knowledge base. Returning used_vector_db=False.")
     from flask import current_app
-    # fallback_answer_question may not be defined above, so import or reference it here
     return clean_and_format_response(current_app.view_functions['fallback_answer_question'](question)), False
 
 @app.route('/schemes')
 def schemes_index():
     return render_template('schemes.html')
+
+@app.route('/tutorials')
+def tutorials():
+    return render_template('tutorials.html')
+
+@app.route('/faqs')
+def faqs():
+    return render_template('faqs.html')
+
+@app.route('/best-practices')
+def best_practices():
+    return render_template('best_practices.html')
+
+@app.route('/guides')
+def guides():
+    return render_template('guides.html')
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
