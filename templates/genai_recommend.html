@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RS775 Motor Issue Recommendation Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-6">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-indigo-600">RS775 Motor Issue Recommendation Assistant</h1>
+            <p class="text-gray-600">Get recommendations for detected or custom motor issues</p>
+        </header>
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <div class="mb-3">
+                <label for="imported-issues" class="block font-medium text-gray-700 mb-2">Detected Issues from Dashboard:</label>
+                <select id="imported-issues" class="border border-gray-300 rounded px-4 py-2 w-full mb-2">
+                    <option value="">-- Select an issue from dashboard --</option>
+                    {% set unique_alerts = alerts|unique %}
+                    {% for alert in unique_alerts %}
+                    <option value="{{ alert }}">{{ alert }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <form id="recommend-form" class="mb-3">
+                <div class="mb-3">
+                    <label for="issue" class="block font-medium text-gray-700 mb-2">Describe your RS775 motor issue:</label>
+                    <textarea class="border border-gray-300 rounded px-4 py-2 w-full" id="issue" name="issue" rows="3" required></textarea>
+                </div>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Get Recommendation</button>
+            </form>
+            <div id="recommendation-result" class="mt-4 text-left max-w-2xl mx-auto bg-blue-50 text-blue-800 rounded p-4 d-none">
+                {% if recommendation %}
+                    {{ recommendation|markdown_to_html|safe }}
+                {% endif %}
+            </div>
+        </div>
+        <div class="text-center">
+            <a href="/" class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-indigo-700">Back to Dashboard</a>
+        </div>
+    </div>
+    <script>
+    // Import dashboard issues into the textarea
+    const importedIssues = document.getElementById('imported-issues');
+    const issueTextarea = document.getElementById('issue');
+    if (importedIssues) {
+      importedIssues.addEventListener('change', function() {
+        if (importedIssues.value) {
+          issueTextarea.value = importedIssues.value;
+        }
+      });
+    }
+    document.getElementById('recommend-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const issue = document.getElementById('issue').value.trim();
+      const resultDiv = document.getElementById('recommendation-result');
+      resultDiv.classList.add('d-none');
+      resultDiv.textContent = '';
+      if (!issue) return;
+      resultDiv.textContent = 'Loading...';
+      resultDiv.classList.remove('d-none');
+      try {
+        const resp = await fetch('/recommend-genai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ issue })
+        });
+        if (!resp.ok) {
+          resultDiv.textContent = 'Error: Could not get recommendation.';
+          return;
+        }
+        const data = await resp.json();
+        if (data.recommendation) {
+          // If the recommendation starts with our justify div, render as HTML, else as text
+          if (typeof data.recommendation === 'string' && data.recommendation.trim().startsWith('<div style="text-align:justify;white-space:pre-line;">')) {
+            resultDiv.innerHTML = data.recommendation;
+          } else {
+            resultDiv.textContent = data.recommendation;
+          }
+        } else if (data.error) {
+          resultDiv.textContent = data.error;
+        } else {
+          resultDiv.textContent = 'No recommendation received.';
+        }
+      } catch (err) {
+        resultDiv.textContent = 'Error: Could not get recommendation.';
+      }
+    });
+    // Fetch unique alerts and populate dropdown
+    fetch('/get-alerts')
+        .then(res => res.json())
+        .then(data => {
+            const dropdown = document.getElementById('imported-issues');
+            if (data.alerts && data.alerts.length > 0) {
+                data.alerts.forEach(alert => {
+                    const opt = document.createElement('option');
+                    opt.value = alert;
+                    opt.textContent = alert;
+                    dropdown.appendChild(opt);
+                });
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No detected issues available.';
+                dropdown.appendChild(opt);
+            }
+        });
+    </script>
+</body>
+</html>
