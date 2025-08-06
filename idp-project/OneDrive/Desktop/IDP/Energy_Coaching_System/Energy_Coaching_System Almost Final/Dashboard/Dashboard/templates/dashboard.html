@@ -1,0 +1,78 @@
+<!-- dashboard.html: Interactive dashboard for time-series analytics and Plotly visualization -->
+{% include '_navbar.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+
+<div class="dashboard-container">
+    <div class="dashboard-title">📊 Dashboard</div>
+    <div class="dashboard-subtitle">Upload your motor data CSV and view interactive analytics, alerts, and summary statistics.</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+        <button onclick="window.location.href='/'" style="background:#6366f1;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(99,102,241,0.12);">← Back to Home</button>
+        <form method="POST" enctype="multipart/form-data" class="upload-form" style="margin-bottom:0;">
+            <input type="file" name="csv_file" accept=".csv">
+            <div style="margin-top:8px;">
+                <button type="submit">Upload & Analyze</button>
+            </div>
+        </form>
+        <form method="POST" style="margin-bottom:0;">
+            <input type="hidden" name="clear" value="1">
+            <button type="submit" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(239,68,68,0.12);">Clear Graphs</button>
+        </form>
+    </div>
+
+
+    {% if plot_html %}
+        <div class="plotly-graph">{{ plot_html|safe }}</div>
+        <div class="insights-section" style="margin-bottom:24px;">
+            <h3>Insights</h3>
+            <ul>
+            {% for m in metrics %}
+                <li>{{ insights[m]|safe }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    {% if separate_graphs %}
+        <div class="separate-graphs-section">
+            <h3>Individual Time-Series Graphs (Moving Averages)</h3>
+            {% for m in metrics %}
+                <div class="plotly-graph">{{ separate_graphs[m]|safe }}</div>
+                <div class="graph-tip" style="font-size:13px;color:#6366f1;margin-bottom:8px;">Tip: Use the top-right button in the graph to enlarge it fullscreen.</div>
+                <div class="insights-section" style="margin-bottom:24px;">
+                    <b>Insights for {{ m.title() }}:</b> {{ insights[m]|safe }}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {% if alerts %}
+    <div class="alerts-section">
+        <h3>Alerts</h3>
+        <ul>
+        {% for alert in alerts %}
+            <li>{{ alert }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {# --- V, I, T Issue Points Graph --- #}
+    {% if issue_points_graph_html %}
+    <div class="plotly-graph" style="margin-top:32px;">
+        <h3>V, I, T Data with Issue Points Highlighted</h3>
+        {{ issue_points_graph_html|safe }}
+        <div class="graph-tip" style="font-size:13px;color:#6366f1;margin-bottom:8px;">Tip: Use the top-right button in the graph to enlarge it fullscreen.</div>
+    </div>
+    {% endif %}
+
+    {% if latest_data %}
+    <div class="latest-section">
+        <h3>Latest Data Point</h3>
+        <ul>
+        {% for key, value in latest_data.items() %}
+            <li>{{ key }}: <b>{{ value }}</b></li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>

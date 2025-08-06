@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Best Practices for Energy Management</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        body { background: linear-gradient(135deg, #6366f1 0%, #60a5fa 100%); color: #fff; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; }
+        .container { max-width: 700px; margin: 40px auto; background: rgba(255,255,255,0.08); border-radius: 18px; box-shadow: 0 4px 24px rgba(99,102,241,0.12); padding: 32px 36px; }
+        h1 { color: #fff; text-align: center; margin-bottom: 24px; font-size: 2.2em; letter-spacing: 1px; font-weight: 700; }
+        ul.best-practices { list-style: none; padding: 0; }
+        ul.best-practices li { background: rgba(255,255,255,0.12); margin-bottom: 18px; padding: 18px 22px; border-radius: 12px; font-size: 1.15em; color: #111; box-shadow: 0 2px 8px rgba(99,102,241,0.04); display: flex; align-items: center; }
+        ul.best-practices li i {
+            font-size: 1.3em;
+            margin-right: 14px;
+            color: #00796b;
+        }
+        .section-title {
+            color: #ad1457;
+            font-size: 1.3em;
+            margin-top: 32px;
+            margin-bottom: 12px;
+            text-align: left;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 16px 8px; }
+            h1 { font-size: 1.3em; }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+{% include '_navbar.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<div class="dashboard-container">
+    <div class="dashboard-title">🌟 Best Practices</div>
+    <div class="dashboard-subtitle">Recommended best practices for energy management and efficiency in MSMEs.</div>
+    <ul class="best-practices" style="margin-top:24px;">
+        <li><i class="fas fa-search"></i> Conduct regular energy audits to identify inefficiencies and savings opportunities.</li>
+        <li><i class="fas fa-tools"></i> Maintain motors, pumps, and equipment to prevent energy loss and downtime.</li>
+        <li><i class="fas fa-lightbulb"></i> Adopt LED lighting, efficient HVAC systems, and smart controls.</li>
+        <li><i class="fas fa-bolt"></i> Use variable frequency drives (VFDs) for motors to optimize speed and reduce consumption.</li>
+        <li><i class="fas fa-battery-full"></i> Monitor power factor and install correction capacitors as needed.</li>
+        <li><i class="fas fa-recycle"></i> Implement waste heat recovery and reuse systems.</li>
+        <li><i class="fas fa-users"></i> Train staff and promote a culture of energy awareness and responsibility.</li>
+        <li><i class="fas fa-chart-line"></i> Track energy usage with smart meters and analytics dashboards.</li>
+        <li><i class="fas fa-solar-panel"></i> Integrate renewable energy sources like solar or wind where feasible.</li>
+        <li><i class="fas fa-leaf"></i> Regularly review and update energy policies to align with new technologies and standards.</li>
+    </ul>
+    <div class="section-title">Quick Tips for MSMEs</div>
+    <ul class="best-practices">
+        <li><i class="fas fa-check-circle"></i> Schedule equipment operation during off-peak hours to reduce costs.</li>
+        <li><i class="fas fa-tachometer-alt"></i> Minimize idle running of machines and switch off when not in use.</li>
+        <li><i class="fas fa-water"></i> Fix leaks in compressed air, steam, and water systems promptly.</li>
+        <li><i class="fas fa-cogs"></i> Upgrade to energy-efficient machinery and motors.</li>
+        <li><i class="fas fa-thermometer-half"></i> Insulate pipes, ducts, and tanks to prevent energy loss.</li>
+    </ul>
+</div>
+</body>
+</html>

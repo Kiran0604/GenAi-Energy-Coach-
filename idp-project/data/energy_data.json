@@ -1,0 +1,27 @@
+[
+    {
+        "equipmentId": "EQ1",
+        "energy": 45.67,
+        "timestamp": "2025-05-18T21:56:00.000Z"
+    },
+    {
+        "equipmentId": "EQ2",
+        "energy": 62.34,
+        "timestamp": "2025-05-18T21:56:05.000Z"
+    },
+    {
+        "equipmentId": "EQ3",
+        "energy": 78.12,
+        "timestamp": "2025-05-18T21:56:10.000Z"
+    },
+    {
+        "equipmentId": "EQ4",
+        "energy": 53.89,
+        "timestamp": "2025-05-18T21:56:15.000Z"
+    },
+    {
+        "equipmentId": "EQ5",
+        "energy": 67.45,
+        "timestamp": "2025-05-18T21:56:20.000Z"
+    }
+]

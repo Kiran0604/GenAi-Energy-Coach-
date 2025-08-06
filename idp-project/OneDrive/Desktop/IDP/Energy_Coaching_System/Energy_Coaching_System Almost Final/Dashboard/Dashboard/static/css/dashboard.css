@@ -1,0 +1,100 @@
+/* dashboard.css: Custom styles for dashboard page */
+body {
+    background: linear-gradient(120deg, #f8fafc 0%, #e0e7ff 100%);
+    font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+    color: #222;
+}
+.dashboard-container {
+    max-width: 900px;
+    margin: 40px auto;
+    background: rgba(255,255,255,0.95);
+    border-radius: 18px;
+    box-shadow: 0 8px 32px rgba(60, 60, 120, 0.18);
+    padding: 32px 36px 24px 36px;
+}
+.dashboard-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #3b82f6;
+    margin-bottom: 10px;
+    text-align: center;
+    letter-spacing: 1px;
+}
+.dashboard-subtitle {
+    font-size: 1.2rem;
+    color: #6366f1;
+    text-align: center;
+    margin-bottom: 28px;
+}
+.upload-form {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.upload-form input[type="file"] {
+    border: 1px solid #a5b4fc;
+    border-radius: 8px;
+    padding: 8px;
+    background: #f1f5f9;
+    color: #374151;
+}
+.upload-form button {
+    background: linear-gradient(90deg, #6366f1 0%, #3b82f6 100%);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(99,102,241,0.12);
+    transition: background 0.2s;
+}
+.upload-form button:hover {
+    background: linear-gradient(90deg, #3b82f6 0%, #6366f1 100%);
+}
+.plotly-graph {
+    margin: 32px 0 24px 0;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(99,102,241,0.10);
+    background: #f3f4f6;
+    padding: 18px;
+}
+.summary-section, .alerts-section, .latest-section {
+    margin-bottom: 24px;
+    background: #eef2ff;
+    border-radius: 10px;
+    padding: 18px 22px;
+    box-shadow: 0 2px 8px rgba(99,102,241,0.08);
+}
+.summary-section h3, .alerts-section h3, .latest-section h3 {
+    color: #6366f1;
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+}
+.summary-section ul, .alerts-section ul, .latest-section ul {
+    list-style: none;
+    padding-left: 0;
+}
+.summary-section li, .alerts-section li, .latest-section li {
+    padding: 4px 0;
+    font-size: 1rem;
+    color: #374151;
+}
+.alerts-section li {
+    color: #ef4444;
+    font-weight: 500;
+}
+.latest-section li {
+    color: #0ea5e9;
+}
+@media (max-width: 700px) {
+    .dashboard-container {
+        padding: 16px 8px;
+    }
+    .dashboard-title {
+        font-size: 2rem;
+    }
+}

@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+
+# Data and uploads
+uploads/
+data/
+
+# VS Code
+.vscode/

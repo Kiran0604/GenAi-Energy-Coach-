@@ -1,0 +1,28 @@
+{% include '_navbar.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<div class="dashboard-container">
+    <div class="dashboard-title">❓ FAQs</div>
+    <div class="dashboard-subtitle">Frequently Asked Questions about energy schemes, incentives, and best practices.</div>
+    <div class="faq-list" style="margin-top:24px;">
+        <div style="margin-bottom:32px;"><b>Q:</b> What data format is required for uploads?<br><b>A:</b> CSV with columns: timestamp, voltage, current, temperature, (optional: torque, energy, rpm).</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How do I interpret dashboard alerts?<br><b>A:</b> Alerts highlight overheating, voltage drops, current spikes, and efficiency issues. See dashboard for details.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Can I use the dashboard for predictive maintenance?<br><b>A:</b> Yes, analytics and ML features can help predict failures and maintenance needs.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Where can I find government schemes for MSMEs?<br><b>A:</b> Visit the <a href="/guides">Guides</a> section for details.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> What is the PAT scheme and how does it benefit MSMEs?<br><b>A:</b> PAT is a market-based mechanism for energy efficiency. MSMEs can earn certificates and reduce costs. See Guides for more.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How do I ask the chatbot about MSME schemes?<br><b>A:</b> Go to the <a href="/schemes">Schemes</a> page and use the AI assistant for personalized answers.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> What are the incentives for installing solar panels in my MSME?<br><b>A:</b> Subsidies, tax benefits, and reduced energy bills. See Guides and ask the chatbot for specifics.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How do I access tutorials and best practices?<br><b>A:</b> Use the navigation bar to visit Tutorials and Best Practices pages for step-by-step help.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Is my data secure on this platform?<br><b>A:</b> Yes, your data is stored securely and only accessible to authorized users.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Can I download analytics reports?<br><b>A:</b> Yes, you can export your analytics in CSV, Excel, or PDF formats from the dashboard.</div>
+        <!-- Additional project-specific FAQs -->
+        <div style="margin-bottom:32px;"><b>Q:</b> What types of motors and equipment can I analyze with the dashboard?<br><b>A:</b> The dashboard supports BLDC motors, induction motors, and other industrial equipment with time-series data for voltage, current, temperature, and more.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How do I highlight issue points for voltage, current, and temperature?<br><b>A:</b> Upload your CSV and the dashboard will automatically mark issue points on the V, I, T graphs based on threshold analytics.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Can I view individual metric graphs and moving averages?<br><b>A:</b> Yes, after uploading data, you can view separate time-series graphs for each metric, including moving averages and insights.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How do I enlarge or fullscreen the graphs?<br><b>A:</b> Use the top-right button on each Plotly graph to view it in fullscreen mode for detailed analysis.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> What file types are supported for upload?<br><b>A:</b> Only CSV files are supported. Ensure your data is properly formatted before uploading.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How do I clear all graphs and analytics?<br><b>A:</b> Use the 'Clear Graphs' button on the dashboard to reset all visualizations and start fresh.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> How does the AI assistant help with MSME schemes?<br><b>A:</b> The AI assistant provides personalized recommendations and answers about government schemes, eligibility, and application processes for MSMEs.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Can I export or share my dashboard analytics?<br><b>A:</b> Yes, you can export analytics reports in CSV, Excel, or PDF formats and share them with your team or stakeholders.</div>
+        <div style="margin-bottom:32px;"><b>Q:</b> Who can access my uploaded data?<br><b>A:</b> Only authorized users can access your uploaded data. Data privacy and security are ensured by the platform.</div>
+    </div>
+</div>
